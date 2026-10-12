@@ -76,4 +76,23 @@ consteval ReflectedContext get_context(std::string_view file, uint32_t line) {
     return extract_reflected_context_impl(Scope, file, line);
 }
 
+consteval uint64_t compute_call_site_id(const ReflectedContext& ctx) {
+    uint64_t h = 14695981039346656037ULL;
+    for (char c : ctx.file_name) {
+        h = (h ^ static_cast<uint64_t>(c)) * 1099511628211ULL;
+    }
+    for (char c : ctx.class_name) {
+        h = (h ^ static_cast<uint64_t>(c)) * 1099511628211ULL;
+    }
+    for (char c : ctx.method_name) {
+        h = (h ^ static_cast<uint64_t>(c)) * 1099511628211ULL;
+    }
+    for (char c : ctx.full_scope_name) {
+        h = (h ^ static_cast<uint64_t>(c)) * 1099511628211ULL;
+    }
+    h = (h ^ static_cast<uint64_t>(ctx.line_number)) * 1099511628211ULL;
+    return h;
+}
+
 } // namespace vordr::detail
+

@@ -60,29 +60,43 @@ private:
 
 namespace detail {
 
-template <std::meta::info Scope, uint32_t Line>
+#if defined(__APPLE__)
+#define VORDR_CONTROL_SECTION __attribute__((section("__DATA,__vordr_ctrl")))
+#elif defined(_WIN32)
+#define VORDR_CONTROL_SECTION __attribute__((section(".vordr_ctrl")))
+#else
+#define VORDR_CONTROL_SECTION __attribute__((section("vordr_ctrl")))
+#endif
+
+template <uint64_t SiteId>
 struct CallSiteStorage {
-    static inline std::atomic<uint64_t> cached_epoch{0};
-    static inline std::atomic<uint8_t> cached_level{static_cast<uint8_t>(LogLevel::INFO)};
+    // 64-bit packed control block placed in dedicated linker section for maximum L1/L2 cache locality:
+    // Bits 0-7:   Effective LogLevel
+    // Bits 8-63:  Config epoch
+    VORDR_CONTROL_SECTION static inline std::atomic<uint64_t> control_{
+        (0ULL << 8) | static_cast<uint64_t>(LogLevel::INFO)
+    };
 
     static bool is_enabled(LogLevel lvl, const ReflectedContext& ctx) noexcept {
         if (lvl == LogLevel::OFF) [[unlikely]] return false;
 
+        uint64_t ctrl = control_.load(std::memory_order_relaxed);
+        uint64_t c_epoch = ctrl >> 8;
         uint64_t g_epoch = Logger::instance().config_epoch();
-        uint64_t c_epoch = cached_epoch.load(std::memory_order_relaxed);
         if (__builtin_expect(c_epoch != g_epoch, 0)) {
-            resolve(g_epoch, ctx);
+            ctrl = resolve(g_epoch, ctx);
         }
 
-        uint8_t eff = cached_level.load(std::memory_order_relaxed);
+        uint8_t eff = static_cast<uint8_t>(ctrl & 0xFF);
         if (eff == static_cast<uint8_t>(LogLevel::OFF)) [[unlikely]] return false;
         return static_cast<uint8_t>(lvl) >= eff;
     }
 
-    static void resolve(uint64_t g_epoch, const ReflectedContext& ctx) noexcept {
+    static uint64_t resolve(uint64_t g_epoch, const ReflectedContext& ctx) noexcept {
         LogLevel effective = Logger::instance().get_effective_level_uncached(ctx);
-        cached_level.store(static_cast<uint8_t>(effective), std::memory_order_relaxed);
-        cached_epoch.store(g_epoch, std::memory_order_release);
+        uint64_t new_ctrl = (g_epoch << 8) | static_cast<uint64_t>(effective);
+        control_.store(new_ctrl, std::memory_order_release);
+        return new_ctrl;
     }
 };
 

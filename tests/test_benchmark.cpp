@@ -132,14 +132,15 @@ int main() {
     double fast_path_ns_per_op = 0.0;
     {
         constexpr auto ctx = std::meta::access_context::current();
-        vordr::ReflectedContext ref_ctx = vordr::detail::get_context<ctx.scope()>(__FILE__, __LINE__);
+        constexpr vordr::ReflectedContext ref_ctx = vordr::detail::get_context<ctx.scope()>(__FILE__, __LINE__);
+        constexpr uint64_t site_id = vordr::detail::compute_call_site_id(ref_ctx);
 
         // Warm up call site cache
-        vordr::detail::CallSiteStorage<ctx.scope(), __LINE__>::is_enabled(vordr::LogLevel::DEBUG, ref_ctx);
+        vordr::detail::CallSiteStorage<site_id>::is_enabled(vordr::LogLevel::DEBUG, ref_ctx);
 
         auto start = std::chrono::steady_clock::now();
         for (size_t i = 0; i < ITERATIONS_GATED; ++i) {
-            bool enabled = vordr::detail::CallSiteStorage<ctx.scope(), __LINE__>::is_enabled(vordr::LogLevel::DEBUG, ref_ctx);
+            bool enabled = vordr::detail::CallSiteStorage<site_id>::is_enabled(vordr::LogLevel::DEBUG, ref_ctx);
             Benchmark::do_not_optimize(enabled);
         }
         auto end = std::chrono::steady_clock::now();
