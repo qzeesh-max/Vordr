@@ -13,7 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="#requirements"><img src="https://img.shields.io/badge/C%2B%2B-26-orange.svg" alt="Standard: C++26" /></a>
   <a href="#building-and-testing"><img src="https://img.shields.io/badge/Tests-26%20Passing-brightgreen.svg" alt="Tests" /></a>
-  <a href="#performance-benchmarks--profiling"><img src="https://img.shields.io/badge/Gating-0.81%20ns%2Fop-brightgreen.svg" alt="Latency" /></a>
+  <a href="#performance-benchmarks--profiling"><img src="https://img.shields.io/badge/Gating-0.75%20ns%2Fop-brightgreen.svg" alt="Latency" /></a>
 </p>
 
 ---
@@ -26,8 +26,10 @@
 
 1. **C++26 Static Reflection & Call-Site Gating (`std::meta`)**:
    - Introspects call sites at compile-time to detect the caller's class name, member method, lambda enclosures, and source location.
-   - **Zero String Overhead on Hot Path**: Employs `template <std::meta::info Scope, uint32_t Line> struct CallSiteStorage` static singletons. Moves all string copying, concatenation, and hash lookups completely off the hot path.
-   - Evaluates log level gating in **~0.81 ns** per check (~1.23+ Billion operations/sec) using an atomic config epoch for lock-free cache invalidation.
+   - **Dedicated Linker Section (`VORDR_CONTROL_SECTION`)**: Groups all call-site controls across the entire binary contiguously in a dedicated section (`__DATA,__vordr_ctrl` on macOS, `vordr_ctrl` on Linux, `.vordr_ctrl` on Windows), preventing D-cache fragmentation and false sharing with application globals.
+   - **64-Bit Packed Atomic Control Words**: Packs the config epoch (56 bits) and effective log level (8 bits) into a single 64-bit word. Exactly **8 call-site controls pack into a single 64-byte L1 cache line** and evaluate via a single non-tearing atomic load.
+   - **Zero String Overhead on Hot Path**: Employs `template <uint64_t SiteId> struct CallSiteStorage` static singletons keyed by `consteval uint64_t compute_call_site_id(ctx)`, guaranteeing uniform COMDAT linkage without compiler section conflicts.
+   - Evaluates log level gating in **~0.75 ns** per check (~1.33+ Billion operations/sec) with lock-free epoch-based invalidation.
 
 2. **Branch Predictor Hints (`[[likely]]` / `[[unlikely]]`)**:
    - Critical levels (`FATAL`, `ERROR`, `WARN`) use `[[likely]]` paths to optimize instruction pipelining.
@@ -138,7 +140,7 @@ ninja -C build
 
 ## Performance Benchmarks & Profiling
 
-Benchmarked on Apple Silicon (M-series, Release build with `-O3` via GCC 16):
+Benchmarked on Apple Silicon (M-series, Release build with `-O3 -freflection` via GCC 16):
 
 ```
 ========================================================================================
@@ -147,21 +149,44 @@ Benchmarked on Apple Silicon (M-series, Release build with `-O3` via GCC 16):
 
 Benchmark Scenario                         | Iterations |   Total Time |        Latency |    Throughput
 -------------------------------------------+------------+--------------+----------------+---------------
-1. Legacy Uncached String Lookup           |    1000000 |     23.40 ms |    23.40 ns/op |   42.74 Mops/s
-2. Zero-Alloc StringView Lookup            |    1000000 |     10.05 ms |    10.05 ns/op |   99.47 Mops/s
-3. C++26 CallSiteStorage (Fast Path)       |   10000000 |      8.08 ms |     0.81 ns/op | 1237.47 Mops/s
-4. Full Macro Gating (VORDR_TRACE)         |   10000000 |      8.93 ms |     0.89 ns/op | 1120.07 Mops/s
-5. Enabled Macro Log -> Mmap File          |    1000000 |    163.68 ms |   163.68 ns/op |    6.11 Mops/s
-6. Lock-Free MT Logging (8 Threads)        |     800000 |    385.57 ms |   481.97 ns/op |    2.07 Mops/s
+1. Legacy Uncached String Lookup           |    1000000 |     19.56 ms |    19.56 ns/op |   51.11 Mops/s
+2. Zero-Alloc StringView Lookup            |    1000000 |      8.98 ms |     8.98 ns/op |  111.38 Mops/s
+3. C++26 CallSiteStorage (Fast Path)       |   10000000 |      7.49 ms |     0.75 ns/op | 1334.76 Mops/s
+4. Full Macro Gating (VORDR_TRACE)         |   10000000 |      8.65 ms |     0.86 ns/op | 1156.60 Mops/s
+5. Enabled Macro Log -> Mmap File          |    1000000 |    163.32 ms |   163.32 ns/op |    6.12 Mops/s
+6. Lock-Free MT Logging (8 Threads)        |     800000 |    375.17 ms |   468.96 ns/op |    2.13 Mops/s
 -------------------------------------------+------------+--------------+----------------+---------------
 ```
 
 ### Key Performance Insights
 
-- **28.95x Gating Speedup**: Moving from runtime string concatenation/lookup to `template <std::meta::info Scope, uint32_t Line> struct CallSiteStorage` cuts decision latency from **23.40 ns** down to **0.81 ns** per check (capable of over **1.23 Billion** checks per second on a single core).
-- **Sub-Nanosecond Macro Gating**: With lazy evaluation and branch gating (`[[unlikely]]`), a disabled `VORDR_TRACE` statement costs only **0.89 ns**, completely eliding stream formatting and any argument expressions.
-- **High-Throughput Memory Mapping**: Single-threaded formatted logging into memory-mapped files clocks in at **628.61 MB/s** (6.11 Million logs/sec).
-- **Lock-Free Concurrency**: 8 concurrent threads log at **162+ MB/s** with zero mutex locking or thread serialization.
+- **26.1x Gating Speedup**: Moving from runtime string concatenation/lookup to `template <uint64_t SiteId> struct CallSiteStorage` cuts decision latency from **19.56 ns** down to **0.75 ns** per check (capable of over **1.33 Billion** checks per second on a single core).
+- **Sub-Nanosecond Macro Gating**: With lazy evaluation and branch gating (`[[unlikely]]`), a disabled `VORDR_TRACE` statement costs only **0.86 ns**, completely eliding stream formatting and any argument expressions.
+- **High-Throughput Memory Mapping**: Single-threaded formatted logging into memory-mapped files clocks in at **630 MB/s** (6.12 Million logs/sec).
+- **Lock-Free Concurrency**: 8 concurrent threads log at **166+ MB/s** with zero mutex locking or thread serialization.
+
+### Dedicated Linker Section & L1/L2 Cache Line Coalescing
+
+In high-throughput binaries, distributing log site controls across `.data` or `.bss` introduces cache line fragmentation and false sharing with unrelated application state. Vordr solves this at link time:
+
+1. **Section Isolation (`VORDR_CONTROL_SECTION`)**:
+   - macOS / Darwin: `__attribute__((section("__DATA,__vordr_ctrl")))`
+   - Linux / ELF: `__attribute__((section("vordr_ctrl")))`
+   - Windows / PE-COFF: `__attribute__((section(".vordr_ctrl")))`
+   All call-site controls across all compilation units are coalesced contiguously in memory.
+
+2. **Dense 64-Bit Packing**:
+   Each control block is an 8-byte atomic value (`std::atomic<uint64_t>`):
+   ```
+   [63 ................................... 8][7 ....... 0]
+              Config Epoch (56 bits)         LogLevel (8 bits)
+   ```
+   - Exactly **8 call-site controls fit in a single 64-byte L1 D-cache line**.
+   - Spatial locality ensures that when one log site is checked, adjacent log sites are already preloaded in the CPU cache.
+   - Evaluated via a single atomic 64-bit load with no tearing.
+
+3. **Compiler Linkage Conflict Resolution**:
+   By deriving a unique 64-bit integer ID at compile time via `consteval uint64_t compute_call_site_id(ctx)`, the template parameter is a pure integer non-type template parameter. This guarantees uniform external/COMDAT linkage across all translation units, completely avoiding compiler section type conflicts between local (static functions/lambdas) and external entities.
 
 ---
 
