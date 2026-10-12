@@ -54,26 +54,52 @@ This project is licensed under the **GNU Affero General Public License v3 (AGPL-
 
 ## Building and Testing
 
-### 1. Configure and Build
+Convenience scripts are provided in the repository root (and under `scripts/`):
+
+### 1. Build
 
 ```bash
-cmake -B build -G Ninja -DCMAKE_CXX_COMPILER=/opt/homebrew/bin/g++-16
-ninja -C build
+# Build (Debug mode by default)
+./build.sh
+
+# Build in Release mode with optimizations
+./build.sh --release
+
+# Clean build
+./build.sh --clean
 ```
 
 ### 2. Run Test Suite (25 Unit & Correctness Tests)
 
 ```bash
+# Run tests directly
+./run_tests.sh
+
+# Rebuild and run
+./run_tests.sh --build
+
+# Run via CTest runner
+./run_tests.sh --ctest
+```
+
+### 3. Run Example Demo
+
+```bash
+# Run demo application
+./run_example.sh
+
+# Rebuild and run demo
+./run_example.sh --build
+```
+
+### Manual CMake Instructions
+
+If you prefer building manually with CMake and Ninja:
+
+```bash
+cmake -B build -G Ninja -DCMAKE_CXX_COMPILER=/opt/homebrew/bin/g++-16
+ninja -C build
 ./build/vordr_tests
-```
-or via CTest:
-```bash
-ctest --test-dir build --output-on-failure
-```
-
-### 3. Run Example
-
-```bash
 ./build/vordr_example
 ```
 
