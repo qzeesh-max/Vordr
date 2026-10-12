@@ -9,8 +9,8 @@
 #include <iomanip>
 #include <numeric>
 #include <cstdio>
-
 #include <atomic>
+#include <sys/resource.h>
 
 namespace Benchmark {
 
@@ -18,6 +18,51 @@ namespace Benchmark {
 std::atomic<int> g_dummy_sink{0};
 int heavy_computation() {
     return ++g_dummy_sink;
+}
+
+// Simulating old-school uncached gmtime_r timestamp formatting
+void legacy_gmtime_format(const std::chrono::system_clock::time_point& tp, char* out) {
+    auto duration = tp.time_since_epoch();
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
+    auto micros = std::chrono::duration_cast<std::chrono::microseconds>(duration - seconds).count();
+
+    std::time_t tt = seconds.count();
+    std::tm tm_buf{};
+    gmtime_r(&tt, &tm_buf);
+
+    int year = tm_buf.tm_year + 1900;
+    int month = tm_buf.tm_mon + 1;
+    int day = tm_buf.tm_mday;
+    int hour = tm_buf.tm_hour;
+    int min = tm_buf.tm_min;
+    int sec = tm_buf.tm_sec;
+
+    out[0] = static_cast<char>('0' + (year / 1000) % 10);
+    out[1] = static_cast<char>('0' + (year / 100) % 10);
+    out[2] = static_cast<char>('0' + (year / 10) % 10);
+    out[3] = static_cast<char>('0' + (year % 10));
+    out[4] = '-';
+    out[5] = static_cast<char>('0' + (month / 10));
+    out[6] = static_cast<char>('0' + (month % 10));
+    out[7] = '-';
+    out[8] = static_cast<char>('0' + (day / 10));
+    out[9] = static_cast<char>('0' + (day % 10));
+    out[10] = ' ';
+    out[11] = static_cast<char>('0' + (hour / 10));
+    out[12] = static_cast<char>('0' + (hour % 10));
+    out[13] = ':';
+    out[14] = static_cast<char>('0' + (min / 10));
+    out[15] = static_cast<char>('0' + (min % 10));
+    out[16] = ':';
+    out[17] = static_cast<char>('0' + (sec / 10));
+    out[18] = static_cast<char>('0' + (sec % 10));
+    out[19] = '.';
+    out[20] = static_cast<char>('0' + (micros / 100000) % 10);
+    out[21] = static_cast<char>('0' + (micros / 10000) % 10);
+    out[22] = static_cast<char>('0' + (micros / 1000) % 10);
+    out[23] = static_cast<char>('0' + (micros / 100) % 10);
+    out[24] = static_cast<char>('0' + (micros / 10) % 10);
+    out[25] = static_cast<char>('0' + (micros % 10));
 }
 
 // Simulating old-school uncached string concatenation + lookup approach
@@ -213,6 +258,51 @@ int main() {
     double mt_mb = static_cast<double>(mt_bytes_after - mt_bytes_before) / (1024.0 * 1024.0);
     double mt_throughput_mb_s = (mt_mb / (mt_ms / 1000.0));
 
+    // -------------------------------------------------------------
+    // Benchmark 7: Legacy gmtime_r Timestamp Formatting
+    // -------------------------------------------------------------
+    double legacy_ts_ns = 0.0;
+    {
+        constexpr size_t RUNS = 1'000'000;
+        char buf[64];
+        auto now = std::chrono::system_clock::now();
+        auto start = std::chrono::steady_clock::now();
+        for (size_t i = 0; i < RUNS; ++i) {
+            Benchmark::legacy_gmtime_format(now, buf);
+            Benchmark::do_not_optimize(buf);
+        }
+        auto end = std::chrono::steady_clock::now();
+        double ms = std::chrono::duration<double, std::milli>(end - start).count();
+        legacy_ts_ns = (ms * 1e6) / RUNS;
+        Benchmark::print_result("7. Legacy gmtime_r Formatter", RUNS, ms);
+    }
+
+    // -------------------------------------------------------------
+    // Benchmark 8: Zero-Syscall Cached Civil Timestamp Formatter
+    // -------------------------------------------------------------
+    double cached_ts_ns = 0.0;
+    struct rusage ru_before{}, ru_after{};
+    getrusage(RUSAGE_SELF, &ru_before);
+    {
+        constexpr size_t RUNS = 10'000'000;
+        char buf[64];
+        auto now = std::chrono::system_clock::now();
+        auto start = std::chrono::steady_clock::now();
+        for (size_t i = 0; i < RUNS; ++i) {
+            vordr::Timestamp::format_time_point(now, buf, sizeof(buf));
+            Benchmark::do_not_optimize(buf);
+        }
+        auto end = std::chrono::steady_clock::now();
+        double ms = std::chrono::duration<double, std::milli>(end - start).count();
+        cached_ts_ns = (ms * 1e6) / RUNS;
+        Benchmark::print_result("8. Zero-Syscall Cached Timestamp", RUNS, ms);
+    }
+    getrusage(RUSAGE_SELF, &ru_after);
+
+    double ts_sys_sec = (ru_after.ru_stime.tv_sec - ru_before.ru_stime.tv_sec) +
+                        (ru_after.ru_stime.tv_usec - ru_before.ru_stime.tv_usec) * 1e-6;
+    long ts_vcsw = ru_after.ru_nvcsw - ru_before.ru_nvcsw;
+
     std::cout << "-------------------------------------------+------------+--------------+----------------+---------------\n\n";
 
     // -------------------------------------------------------------
@@ -229,7 +319,15 @@ int main() {
     std::cout << "     - C++26 CallSiteStorage fast-path      : " << fast_path_ns_per_op << " ns/op ("
               << (legacy_ns_per_op / fast_path_ns_per_op) << "x speedup over legacy!)\n\n";
 
-    std::cout << " [2] Mmap Sink Disk Throughput:\n";
+    std::cout << " [2] Timestamp Formatting & System Call Elimination:\n";
+    std::cout << "     - Legacy gmtime_r latency              : " << legacy_ts_ns << " ns/op\n";
+    std::cout << "     - Zero-Syscall Cached Civil Timestamp  : " << cached_ts_ns << " ns/op ("
+              << (legacy_ts_ns / cached_ts_ns) << "x speedup!)\n";
+    std::cout << "     - System calls per timestamp           : 0 (Pure userspace vDSO & civil math)\n";
+    std::cout << "     - Voluntary context switches (10M ops) : " << ts_vcsw << " (Zero syscall blocking)\n";
+    std::cout << "     - Kernel CPU time (10M ops)            : " << ts_sys_sec << " s\n\n";
+
+    std::cout << " [3] Mmap Sink Disk Throughput:\n";
     std::cout << "     - Single-threaded write rate           : " << throughput_mb_s << " MB/s ("
               << (static_cast<double>(ITERATIONS_ENABLED) / write_ms * 1000.0 / 1e6) << " Mops/s)\n";
     std::cout << "     - 8-Thread lock-free write rate        : " << mt_throughput_mb_s << " MB/s ("

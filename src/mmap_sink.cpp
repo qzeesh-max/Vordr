@@ -141,7 +141,9 @@ void MmapSink::close() noexcept {
 
         // Truncate file down to actual written size
         if (fd_ != -1) {
-            ::ftruncate(fd_, static_cast<off_t>(written));
+            if (::ftruncate(fd_, static_cast<off_t>(written)) < 0) {
+                // Ignore truncation failure on close
+            }
             ::close(fd_);
             fd_ = -1;
         }

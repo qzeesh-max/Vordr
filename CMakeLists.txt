@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.25)
 project(Vordr VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-# Ensure GCC reflection flags are added
-add_compile_options(-freflection -Wall -Wextra -pthread)
+# Support C++26 across CMake versions (CMake < 3.30 does not recognize CXX26 dialect token)
+if(CMAKE_VERSION VERSION_LESS "3.30")
+    add_compile_options(-std=c++26 -freflection -Wall -Wextra -pthread)
+else()
+    set(CMAKE_CXX_STANDARD 26)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+    add_compile_options(-freflection -Wall -Wextra -pthread)
+endif()
 
 # Include directories
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -32,6 +35,7 @@ enable_testing()
 add_executable(vordr_tests
     tests/test_main.cpp
     tests/test_reflection.cpp
+    tests/test_timestamp.cpp
     tests/test_stream_buffer.cpp
     tests/test_config.cpp
     tests/test_mmap_sink.cpp

@@ -67,6 +67,13 @@ fi
 
 BUILD_DIR="${ROOT_DIR}/build"
 
+if [[ -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
+    if ! grep -q "CMAKE_CACHEFILE_DIR:INTERNAL=${BUILD_DIR}" "${BUILD_DIR}/CMakeCache.txt" 2>/dev/null; then
+        echo -e "${YELLOW}Stale CMakeCache detected from different path. Cleaning build directory...${NC}"
+        rm -rf "${BUILD_DIR}"
+    fi
+fi
+
 if [[ ${CLEAN_BUILD} -eq 1 ]] && [[ -d "${BUILD_DIR}" ]]; then
     echo -e "${YELLOW}Cleaning build directory: ${BUILD_DIR}${NC}"
     rm -rf "${BUILD_DIR}"

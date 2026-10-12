@@ -7,6 +7,8 @@
 #include <vector>
 #include <unordered_map>
 #include <shared_mutex>
+#include <atomic>
+#include <cstdint>
 #include "vordr/types.hpp"
 
 namespace vordr {
