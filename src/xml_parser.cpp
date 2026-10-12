@@ -219,6 +219,9 @@ bool XmlConfigParser::apply_element(const XmlElement& elem, Config& out_config, 
                 out_config.set_sink_max_size(sz);
             }
         }
+        if (auto app = elem.get_attr("append")) {
+            out_config.set_sink_append(*app == "true" || *app == "1" || *app == "yes");
+        }
         return true;
     }
 

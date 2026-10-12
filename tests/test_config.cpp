@@ -163,4 +163,29 @@ TEST_CASE("Config - Thread ID Settings and XML Attributes") {
     ASSERT_FALSE(cfg.emit_thread_id());
 }
 
+TEST_CASE("Config - Sink Append Setting and XML Attribute") {
+    // 1. Default should be true
+    vordr::Config cfg;
+    ASSERT_TRUE(cfg.sink_append());
+
+    // 2. Manual toggle
+    cfg.set_sink_append(false);
+    ASSERT_FALSE(cfg.sink_append());
+    cfg.set_sink_append(true);
+    ASSERT_TRUE(cfg.sink_append());
+
+    // 3. XML parsing with append="false" on <sink>
+    constexpr std::string_view xml_no_append = R"(<vordr><sink path="rotated.log" append="false" /></vordr>)";
+    std::string err;
+    ASSERT_TRUE(vordr::XmlConfigParser::parse_string(xml_no_append, cfg, &err));
+    ASSERT_FALSE(cfg.sink_append());
+    ASSERT_EQ(cfg.sink_path(), "rotated.log");
+
+    // 4. XML parsing with append="true" on <sink>
+    constexpr std::string_view xml_append = R"(<vordr><sink path="appended.log" append="true" /></vordr>)";
+    ASSERT_TRUE(vordr::XmlConfigParser::parse_string(xml_append, cfg, &err));
+    ASSERT_TRUE(cfg.sink_append());
+    ASSERT_EQ(cfg.sink_path(), "appended.log");
+}
+
 

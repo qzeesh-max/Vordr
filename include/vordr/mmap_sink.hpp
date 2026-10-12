@@ -64,15 +64,22 @@ public:
     // Inspect content written during the current session only
     std::string_view session_content() const noexcept;
 
+    const std::string& rotated_file_path() const noexcept {
+        return rotated_file_path_;
+    }
+
+    static std::string generate_rotated_path(const std::string& base_path);
+    static size_t scan_valid_content_size(int fd, size_t file_size) noexcept;
+
     bool is_open() const noexcept {
         return fd_ != -1 && mmap_ptr_ != nullptr;
     }
 
 private:
-    static size_t scan_valid_content_size(int fd, size_t file_size) noexcept;
     bool remap_grow(size_t required_capacity) noexcept;
 
     std::string file_path_;
+    std::string rotated_file_path_;
     int fd_{-1};
     char* mmap_ptr_{nullptr};
     std::atomic<size_t> capacity_{0};

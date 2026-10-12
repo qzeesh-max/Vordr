@@ -272,4 +272,77 @@ TEST_CASE("Integration - Multi-Restart Macro Logging Across Application Lifecycl
     std::remove(log_file.c_str());
 }
 
+TEST_CASE("Integration - Append Disabled XML Configuration Moves Existing Log File") {
+    const std::string log_file = "/tmp/vordr_integ_rot.log";
+    std::remove(log_file.c_str());
+
+    auto& logger = vordr::Logger::instance();
+    logger.reset();
+
+    // 1. Initial run with append = true
+    {
+        constexpr std::string_view xml_init = R"(
+<vordr>
+    <sink path="/tmp/vordr_integ_rot.log" append="true" />
+    <logging level="INFO" emit_thread_id="false" emit_method="false" />
+</vordr>
+)";
+        vordr::Config cfg;
+        std::string err;
+        ASSERT_TRUE(vordr::XmlConfigParser::parse_string(xml_init, cfg, &err));
+        ASSERT_TRUE(logger.init(std::move(cfg)));
+
+        VORDR_INFO << "Original session data to be archived";
+        logger.close();
+    }
+
+    std::string rotated_path;
+
+    // 2. Restart with append = false in XML configuration
+    {
+        logger.reset();
+        constexpr std::string_view xml_restart = R"(
+<vordr>
+    <sink path="/tmp/vordr_integ_rot.log" append="false" />
+    <logging level="INFO" emit_thread_id="false" emit_method="false" />
+</vordr>
+)";
+        vordr::Config cfg;
+        std::string err;
+        ASSERT_TRUE(vordr::XmlConfigParser::parse_string(xml_restart, cfg, &err));
+        ASSERT_FALSE(cfg.sink_append());
+        ASSERT_TRUE(logger.init(std::move(cfg)));
+
+        ASSERT_TRUE(logger.sink() != nullptr);
+        rotated_path = logger.sink()->rotated_file_path();
+        ASSERT_FALSE(rotated_path.empty());
+        ASSERT_NE(rotated_path, log_file);
+
+        VORDR_INFO << "New session starting fresh";
+        logger.close();
+    }
+
+    // 3. Verify original log file has only new session data
+    {
+        std::ifstream in(log_file, std::ios::binary);
+        ASSERT_TRUE(in.is_open());
+        std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        ASSERT_TRUE(content.find("New session starting fresh") != std::string::npos);
+        ASSERT_TRUE(content.find("Original session data") == std::string::npos);
+    }
+
+    // 4. Verify rotated log file preserved the original session data
+    {
+        std::ifstream rot_in(rotated_path, std::ios::binary);
+        ASSERT_TRUE(rot_in.is_open());
+        std::string rot_content((std::istreambuf_iterator<char>(rot_in)), std::istreambuf_iterator<char>());
+        ASSERT_TRUE(rot_content.find("Original session data to be archived") != std::string::npos);
+    }
+
+    std::remove(log_file.c_str());
+    if (!rotated_path.empty()) {
+        std::remove(rotated_path.c_str());
+    }
+}
+
 

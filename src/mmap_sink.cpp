@@ -8,8 +8,68 @@
 #include <unistd.h>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <string>
 
 namespace vordr {
+
+namespace {
+
+inline bool is_block_all_zeros(const char* ptr, size_t len) noexcept {
+    const size_t words = len / 8;
+    for (size_t i = 0; i < words; ++i) {
+        uint64_t val = 0;
+        std::memcpy(&val, ptr + i * 8, 8);
+        if (val != 0) {
+            return false;
+        }
+    }
+    const size_t rem = len % 8;
+    const size_t rem_start = words * 8;
+    for (size_t i = 0; i < rem; ++i) {
+        if (ptr[rem_start + i] != '\0') {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+std::string MmapSink::generate_rotated_path(const std::string& base_path) {
+    auto now = std::chrono::system_clock::now();
+    auto sec = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+    auto tp = std::chrono::sys_seconds{std::chrono::seconds{sec}};
+    auto dp = std::chrono::floor<std::chrono::days>(tp);
+    std::chrono::year_month_day ymd{dp};
+    std::chrono::hh_mm_ss time{tp - dp};
+
+    int y = static_cast<int>(ymd.year());
+    unsigned m = static_cast<unsigned>(ymd.month());
+    unsigned d = static_cast<unsigned>(ymd.day());
+    long h = time.hours().count();
+    long min = time.minutes().count();
+    long s = time.seconds().count();
+
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), ".%04d%02u%02u_%02ld%02ld%02ld",
+                  y, m, d, h, min, s);
+
+    std::string candidate = base_path + buf;
+    struct stat st{};
+    if (::stat(candidate.c_str(), &st) != 0) {
+        return candidate;
+    }
+
+    for (int suffix = 1; suffix < 10000; ++suffix) {
+        std::string disambiguated = candidate + "." + std::to_string(suffix);
+        if (::stat(disambiguated.c_str(), &st) != 0) {
+            return disambiguated;
+        }
+    }
+    return candidate;
+}
 
 size_t MmapSink::scan_valid_content_size(int fd, size_t file_size) noexcept {
     if (file_size == 0 || fd == -1) {
@@ -22,34 +82,54 @@ size_t MmapSink::scan_valid_content_size(int fd, size_t file_size) noexcept {
     }
 
     const char* p = static_cast<const char*>(initial_map);
-    ssize_t last = static_cast<ssize_t>(file_size) - 1;
 
-    // Fast-path: if the last byte is non-null (clean shutdown), return full size immediately!
-    if (p[last] != '\0') {
+    // Fast-path: if the last byte is non-null (clean shutdown or full capacity), return full size immediately!
+    if (p[file_size - 1] != '\0') {
         ::munmap(initial_map, file_size);
         return file_size;
     }
 
-    // Backward scan for unclean shutdown recovery (skipping 64-bit zero blocks)
-    while (last >= 0 && (last % 8 != 7) && p[last] == '\0') {
-        --last;
-    }
-    while (last >= 7) {
-        uint64_t val = 0;
-        std::memcpy(&val, p + last - 7, 8);
-        if (val != 0) {
-            while (last >= 0 && p[last] == '\0') {
-                --last;
-            }
-            break;
-        }
-        last -= 8;
-    }
-    while (last >= 0 && p[last] == '\0') {
-        --last;
+    constexpr size_t BLOCK_SIZE = 512;
+    size_t first_block_len = std::min(file_size, BLOCK_SIZE);
+    if (is_block_all_zeros(p, first_block_len)) {
+        ::munmap(initial_map, file_size);
+        return 0;
     }
 
-    size_t valid_size = (last >= 0) ? static_cast<size_t>(last + 1) : 0;
+    // Level 1: Logarithmic search across 512-byte blocks
+    size_t num_blocks = (file_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    size_t low = 0;
+    size_t high = num_blocks - 1;
+
+    while (low < high) {
+        size_t mid = low + (high - low + 1) / 2;
+        size_t offset = mid * BLOCK_SIZE;
+        size_t len = std::min(BLOCK_SIZE, file_size - offset);
+        if (is_block_all_zeros(p + offset, len)) {
+            high = mid - 1;
+        } else {
+            low = mid;
+        }
+    }
+
+    // Level 2: Logarithmic search within the transition block
+    size_t b_start = low * BLOCK_SIZE;
+    size_t b_len = std::min(BLOCK_SIZE, file_size - b_start);
+
+    size_t sub_low = b_start;
+    size_t sub_high = b_start + b_len - 1;
+
+    while (sub_low < sub_high) {
+        size_t mid = sub_low + (sub_high - sub_low + 1) / 2;
+        size_t check_len = sub_high - mid + 1;
+        if (is_block_all_zeros(p + mid, check_len)) {
+            sub_high = mid - 1;
+        } else {
+            sub_low = mid;
+        }
+    }
+
+    size_t valid_size = (p[sub_low] != '\0') ? (sub_low + 1) : 0;
     ::munmap(initial_map, file_size);
     return valid_size;
 }
@@ -57,6 +137,16 @@ size_t MmapSink::scan_valid_content_size(int fd, size_t file_size) noexcept {
 MmapSink::MmapSink(std::string file_path, size_t initial_capacity, bool append)
     : file_path_(std::move(file_path))
 {
+    if (!append) {
+        struct stat st{};
+        if (::stat(file_path_.c_str(), &st) == 0 && st.st_size > 0) {
+            std::string rot = generate_rotated_path(file_path_);
+            if (::rename(file_path_.c_str(), rot.c_str()) == 0) {
+                rotated_file_path_ = std::move(rot);
+            }
+        }
+    }
+
     fd_ = ::open(file_path_.c_str(), O_RDWR | O_CREAT, 0644);
     if (fd_ == -1) {
         return;

@@ -42,7 +42,7 @@ bool Logger::init(Config config) {
         sink_.reset();
     }
     config_ = std::move(config);
-    sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
+    sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size(), config_.sink_append());
     return sink_->is_open();
 }
 
@@ -60,7 +60,7 @@ MmapSink* Logger::sink() noexcept {
         lock.unlock();
         std::unique_lock ulock(sink_mutex_);
         if (!sink_) {
-            sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
+            sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size(), config_.sink_append());
         }
         return sink_.get();
     }
@@ -82,7 +82,7 @@ void Logger::write_log(std::string_view entry) noexcept {
         lock.unlock();
         std::unique_lock ulock(sink_mutex_);
         if (!sink_) {
-            sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
+            sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size(), config_.sink_append());
         }
         if (sink_) {
             sink_->write(entry);

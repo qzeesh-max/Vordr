@@ -36,6 +36,9 @@ public:
     void set_sink_max_size(size_t max_size) noexcept;
     size_t sink_max_size() const noexcept;
 
+    void set_sink_append(bool append) noexcept;
+    bool sink_append() const noexcept;
+
     void set_file_level(std::string_view file_name, LogLevel level);
     void set_class_level(std::string_view class_name, LogLevel level);
     void set_method_level(std::string_view method_name, LogLevel level);
@@ -70,6 +73,7 @@ private:
     bool emit_thread_id_{true};
     std::string sink_path_{"vordr.log"};
     size_t sink_max_size_{64 * 1024 * 1024}; // 64MB default
+    bool sink_append_{true};
 
     std::vector<Rule> method_rules_;
     std::vector<Rule> class_rules_;

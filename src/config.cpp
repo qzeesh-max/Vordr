@@ -36,6 +36,7 @@ Config::Config(const Config& other) {
     emit_thread_id_ = other.emit_thread_id_;
     sink_path_ = other.sink_path_;
     sink_max_size_ = other.sink_max_size_;
+    sink_append_ = other.sink_append_;
     method_rules_ = other.method_rules_;
     class_rules_ = other.class_rules_;
     file_rules_ = other.file_rules_;
@@ -49,6 +50,7 @@ Config::Config(Config&& other) noexcept {
     emit_thread_id_ = other.emit_thread_id_;
     sink_path_ = std::move(other.sink_path_);
     sink_max_size_ = other.sink_max_size_;
+    sink_append_ = other.sink_append_;
     method_rules_ = std::move(other.method_rules_);
     class_rules_ = std::move(other.class_rules_);
     file_rules_ = std::move(other.file_rules_);
@@ -65,6 +67,7 @@ Config& Config::operator=(const Config& other) {
         emit_thread_id_ = other.emit_thread_id_;
         sink_path_ = other.sink_path_;
         sink_max_size_ = other.sink_max_size_;
+        sink_append_ = other.sink_append_;
         method_rules_ = other.method_rules_;
         class_rules_ = other.class_rules_;
         file_rules_ = other.file_rules_;
@@ -83,6 +86,7 @@ Config& Config::operator=(Config&& other) noexcept {
         emit_thread_id_ = other.emit_thread_id_;
         sink_path_ = std::move(other.sink_path_);
         sink_max_size_ = other.sink_max_size_;
+        sink_append_ = other.sink_append_;
         method_rules_ = std::move(other.method_rules_);
         class_rules_ = std::move(other.class_rules_);
         file_rules_ = std::move(other.file_rules_);
@@ -143,6 +147,17 @@ void Config::set_sink_max_size(size_t max_size) noexcept {
 size_t Config::sink_max_size() const noexcept {
     std::shared_lock lock(mutex_);
     return sink_max_size_;
+}
+
+void Config::set_sink_append(bool append) noexcept {
+    std::unique_lock lock(mutex_);
+    sink_append_ = append;
+    epoch_.fetch_add(1, std::memory_order_release);
+}
+
+bool Config::sink_append() const noexcept {
+    std::shared_lock lock(mutex_);
+    return sink_append_;
 }
 
 void Config::set_file_level(std::string_view file_name, LogLevel level) {

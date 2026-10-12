@@ -211,25 +211,113 @@ TEST_CASE("MmapSink - Overwrite Mode When Append Is Disabled") {
     const std::string test_path = "/tmp/vordr_test_overwrite.log";
     std::remove(test_path.c_str());
 
+    std::string rotated_path;
     // 1. Initial write
     {
         vordr::MmapSink sink(test_path, 64 * 1024);
         ASSERT_TRUE(sink.write("Initial content to be overwritten\n"));
     }
 
-    // 2. Open with append = false
+    // 2. Open with append = false -> existing file must be rotated to a new name
     {
         vordr::MmapSink sink(test_path, 64 * 1024, /*append=*/false);
         ASSERT_EQ(sink.initial_offset(), 0u);
+        rotated_path = sink.rotated_file_path();
+        ASSERT_FALSE(rotated_path.empty());
+        ASSERT_NE(rotated_path, test_path);
         ASSERT_TRUE(sink.write("Fresh new content\n"));
     }
 
     // 3. Verify disk file has only new content
-    std::ifstream in(test_path, std::ios::binary);
-    ASSERT_TRUE(in.is_open());
-    std::string disk_content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-    ASSERT_EQ(disk_content, "Fresh new content\n");
+    {
+        std::ifstream in(test_path, std::ios::binary);
+        ASSERT_TRUE(in.is_open());
+        std::string disk_content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        ASSERT_EQ(disk_content, "Fresh new content\n");
+    }
+
+    // 4. Verify rotated file has previous content
+    {
+        std::ifstream rot_in(rotated_path, std::ios::binary);
+        ASSERT_TRUE(rot_in.is_open());
+        std::string rot_content((std::istreambuf_iterator<char>(rot_in)), std::istreambuf_iterator<char>());
+        ASSERT_EQ(rot_content, "Initial content to be overwritten\n");
+    }
 
     std::remove(test_path.c_str());
+    if (!rotated_path.empty()) {
+        std::remove(rotated_path.c_str());
+    }
+}
+
+TEST_CASE("MmapSink - Rapid Rotation With Timestamp Disambiguation") {
+    const std::string test_path = "/tmp/vordr_test_rapid_rotation.log";
+    std::remove(test_path.c_str());
+
+    std::vector<std::string> rotated_files;
+
+    for (int i = 0; i < 4; ++i) {
+        // Write content
+        {
+            vordr::MmapSink sink(test_path, 64 * 1024, true);
+            ASSERT_TRUE(sink.write("Iteration content " + std::to_string(i) + "\n"));
+        }
+        // Rotate via append = false
+        {
+            vordr::MmapSink sink(test_path, 64 * 1024, /*append=*/false);
+            std::string rot = sink.rotated_file_path();
+            ASSERT_FALSE(rot.empty());
+            rotated_files.push_back(rot);
+            ASSERT_TRUE(sink.write("Post-rotation " + std::to_string(i) + "\n"));
+        }
+    }
+
+    // Ensure all rotated filenames are unique
+    for (size_t i = 0; i < rotated_files.size(); ++i) {
+        for (size_t j = i + 1; j < rotated_files.size(); ++j) {
+            ASSERT_NE(rotated_files[i], rotated_files[j]);
+        }
+        std::remove(rotated_files[i].c_str());
+    }
+    std::remove(test_path.c_str());
+}
+
+TEST_CASE("MmapSink - Logarithmic Search Boundary Detection") {
+    const std::string test_path = "/tmp/vordr_test_logarithmic_search.log";
+
+    auto test_boundary = [&](size_t write_bytes, size_t total_capacity) {
+        std::remove(test_path.c_str());
+        int fd = ::open(test_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
+        ASSERT_TRUE(fd != -1);
+
+        // Pre-allocate full file with zeroes
+        ASSERT_EQ(::ftruncate(fd, static_cast<off_t>(total_capacity)), 0);
+
+        if (write_bytes > 0) {
+            std::string sample(write_bytes, 'A');
+            sample.back() = '\n';
+            ASSERT_EQ(::pwrite(fd, sample.data(), sample.size(), 0), static_cast<ssize_t>(write_bytes));
+        }
+
+        size_t detected = vordr::MmapSink::scan_valid_content_size(fd, total_capacity);
+        ASSERT_EQ(detected, write_bytes);
+        ::close(fd);
+        std::remove(test_path.c_str());
+    };
+
+    const size_t CAP = 16 * 1024 * 1024; // 16 MB pre-allocation
+
+    // Edge cases across words and block boundaries
+    test_boundary(0, CAP);          // All zeros
+    test_boundary(1, CAP);          // 1 byte
+    test_boundary(7, CAP);          // 7 bytes (sub-word boundary)
+    test_boundary(8, CAP);          // 8 bytes (exact word boundary)
+    test_boundary(9, CAP);          // 9 bytes
+    test_boundary(511, CAP);        // 511 bytes (just under block boundary)
+    test_boundary(512, CAP);        // 512 bytes (exact block boundary)
+    test_boundary(513, CAP);        // 513 bytes (just over block boundary)
+    test_boundary(1024, CAP);       // 1024 bytes (multiple blocks)
+    test_boundary(12345, CAP);      // Arbitrary non-aligned size
+    test_boundary(CAP, CAP);        // Completely filled file
 }
 

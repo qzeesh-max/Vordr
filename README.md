@@ -63,8 +63,8 @@
 
 8. **Multi-Restart Append Continuity & Crash Recovery**:
    - Resumes seamlessly from the end of existing log files across process restarts without overwriting prior history.
-   - **Crash Recovery**: If an application crashes before a clean `close()` (leaving a pre-allocated file with trailing nulls), `MmapSink` scans backwards in 64-bit blocks to locate the true end of valid log data, trimming trailing padding and appending new logs without null holes.
-   - Optional overwrite mode (`append=false`) supported for testing or fresh log cycles.
+   - **Logarithmic Crash Recovery ($O(\log N)$)**: If an application terminates abruptly before a clean `close()` (leaving pre-allocated files with trailing null padding), `MmapSink` locates the exact valid data boundary in $\sim 26$ iterations ($\ll 1\ \mu\text{s}$ for 64MB) using a two-level hierarchical binary search over 512-byte blocks and transition words, rather than scanning megabytes linearly.
+   - **Automatic Log File Rotation (`append=false`)**: When append mode is disabled (`append="false"` in XML or `Config::set_sink_append(false)`), any existing log file is archived by renaming it to `<base_path>.YYYYMMDD_HHMMSS` (with collision disambiguation `.1`, `.2`, ...) before creating a fresh log file, ensuring no prior logs are lost.
 
 9. **Microsecond Precision Log Format**:
    - `YYYY-MM-DD HH:MM:SS.ffffff - LogLevel - [tid:thread_id] - Filename:Linenumber : Actual Log Entry`
@@ -247,8 +247,8 @@ Vordr supports runtime XML configuration to define sink parameters, central log 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <vordr>
-    <!-- Memory mapped file sink configuration -->
-    <sink path="/var/log/vordr.log" max_size="67108864" />
+    <!-- Memory mapped file sink configuration (append defaults to true; set to false to rotate prior file) -->
+    <sink path="/var/log/vordr.log" max_size="67108864" append="true" />
 
     <!-- Central log level, method name emission, and thread ID configuration -->
     <!-- emit_thread_id defaults to true; set to false to omit [tid:...] -->
