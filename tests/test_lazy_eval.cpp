@@ -96,3 +96,56 @@ TEST_CASE("Lazy Evaluation - Granular Method Level Activation") {
 
     std::remove(log_file.c_str());
 }
+
+TEST_CASE("Branch Gating - Likely and Unlikely Levels") {
+    const std::string log_file = "/tmp/vordr_branch_test.log";
+    std::remove(log_file.c_str());
+
+    auto& logger = vordr::Logger::instance();
+    logger.reset();
+    vordr::Config cfg;
+    cfg.set_sink_path(log_file);
+    cfg.set_central_level(vordr::LogLevel::WARN);
+    logger.init(std::move(cfg));
+
+    LazyTest::g_side_effect_count = 0;
+
+    // TRACE is gated out (unlikely branch taken)
+    VORDR_TRACE << "Trace side-effect: " << LazyTest::calculate_expensive_value(1);
+    ASSERT_EQ(LazyTest::g_side_effect_count, 0);
+
+    // Generic VORDR_LOG with TRACE
+    VORDR_LOG(vordr::LogLevel::TRACE) << "Generic trace side-effect: " << LazyTest::calculate_expensive_value(2);
+    ASSERT_EQ(LazyTest::g_side_effect_count, 0);
+
+    // WARN is enabled (likely branch taken)
+    VORDR_WARN << "Warn side-effect: " << LazyTest::calculate_expensive_value(3);
+    ASSERT_EQ(LazyTest::g_side_effect_count, 1);
+
+    // ERROR is enabled (likely branch taken)
+    VORDR_ERROR << "Error side-effect: " << LazyTest::calculate_expensive_value(4);
+    ASSERT_EQ(LazyTest::g_side_effect_count, 2);
+
+    // FATAL is enabled (likely branch taken)
+    VORDR_FATAL << "Fatal side-effect: " << LazyTest::calculate_expensive_value(5);
+    ASSERT_EQ(LazyTest::g_side_effect_count, 3);
+
+    // Generic VORDR_LOG with WARN/ERROR/FATAL
+    VORDR_LOG(vordr::LogLevel::WARN) << "Generic warn: " << LazyTest::calculate_expensive_value(6);
+    ASSERT_EQ(LazyTest::g_side_effect_count, 4);
+
+    VORDR_LOG(vordr::LogLevel::FATAL) << "Generic fatal: " << LazyTest::calculate_expensive_value(7);
+    ASSERT_EQ(LazyTest::g_side_effect_count, 5);
+
+    logger.flush(true);
+    std::string_view content = logger.sink()->written_content();
+    ASSERT_TRUE(content.find("Warn side-effect: 30") != std::string_view::npos);
+    ASSERT_TRUE(content.find("Error side-effect: 40") != std::string_view::npos);
+    ASSERT_TRUE(content.find("Fatal side-effect: 50") != std::string_view::npos);
+    ASSERT_TRUE(content.find("Generic warn: 60") != std::string_view::npos);
+    ASSERT_TRUE(content.find("Generic fatal: 70") != std::string_view::npos);
+    ASSERT_TRUE(content.find("Trace side-effect") == std::string_view::npos);
+
+    std::remove(log_file.c_str());
+}
+

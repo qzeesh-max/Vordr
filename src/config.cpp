@@ -188,13 +188,26 @@ bool Config::is_enabled(LogLevel level,
                         std::string_view class_name,
                         std::string_view method_name) const noexcept
 {
-    if (level == LogLevel::OFF) {
+    if (level == LogLevel::OFF) [[unlikely]] {
         return false;
     }
     LogLevel effective = get_effective_level(file, class_name, method_name);
-    if (effective == LogLevel::OFF) {
+    if (effective == LogLevel::OFF) [[unlikely]] {
         return false;
     }
+
+    if (level == LogLevel::FATAL || level == LogLevel::ERROR || level == LogLevel::WARN) [[likely]] {
+        if (static_cast<uint8_t>(level) >= static_cast<uint8_t>(effective)) [[likely]] {
+            return true;
+        }
+        return false;
+    } else if (level == LogLevel::TRACE) [[unlikely]] {
+        if (static_cast<uint8_t>(level) >= static_cast<uint8_t>(effective)) [[unlikely]] {
+            return true;
+        }
+        return false;
+    }
+
     return static_cast<uint8_t>(level) >= static_cast<uint8_t>(effective);
 }
 

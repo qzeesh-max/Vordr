@@ -54,6 +54,11 @@ MmapSink* Logger::sink() noexcept {
 }
 
 bool Logger::is_enabled(LogLevel level, const ReflectedContext& ctx) const noexcept {
+    if (level == LogLevel::FATAL || level == LogLevel::ERROR || level == LogLevel::WARN) [[likely]] {
+        return config_.is_enabled(level, ctx);
+    } else if (level == LogLevel::TRACE) [[unlikely]] {
+        return config_.is_enabled(level, ctx);
+    }
     return config_.is_enabled(level, ctx);
 }
 
