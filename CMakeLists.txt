@@ -46,3 +46,7 @@ add_test(NAME vordr_tests COMMAND vordr_tests)
 # Example target
 add_executable(vordr_example examples/basic_usage.cpp)
 target_link_libraries(vordr_example PRIVATE vordr pthread)
+
+# Benchmark target
+add_executable(vordr_benchmarks tests/test_benchmark.cpp)
+target_link_libraries(vordr_benchmarks PRIVATE vordr pthread)

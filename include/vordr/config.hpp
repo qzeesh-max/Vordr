@@ -4,6 +4,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 #include <unordered_map>
 #include <shared_mutex>
 #include "vordr/types.hpp"
@@ -36,6 +37,10 @@ public:
 
     void clear_overrides();
 
+    uint64_t epoch() const noexcept {
+        return epoch_.load(std::memory_order_acquire);
+    }
+
     LogLevel get_effective_level(const ReflectedContext& ctx) const noexcept;
     LogLevel get_effective_level(std::string_view file,
                                  std::string_view class_name,
@@ -48,15 +53,21 @@ public:
                     std::string_view method_name) const noexcept;
 
 private:
+    struct Rule {
+        std::string name;
+        LogLevel level;
+    };
+
     mutable std::shared_mutex mutex_;
+    std::atomic<uint64_t> epoch_{1};
     LogLevel central_level_{LogLevel::INFO};
     bool emit_method_{false};
     std::string sink_path_{"vordr.log"};
     size_t sink_max_size_{64 * 1024 * 1024}; // 64MB default
 
-    std::unordered_map<std::string, LogLevel> file_levels_;
-    std::unordered_map<std::string, LogLevel> class_levels_;
-    std::unordered_map<std::string, LogLevel> method_levels_;
+    std::vector<Rule> method_rules_;
+    std::vector<Rule> class_rules_;
+    std::vector<Rule> file_rules_;
 };
 
 } // namespace vordr

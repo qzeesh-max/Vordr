@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <shared_mutex>
+#include <meta>
 #include "vordr/types.hpp"
 #include "vordr/config.hpp"
 #include "vordr/mmap_sink.hpp"
@@ -26,6 +27,14 @@ public:
 
     Config& config() noexcept { return config_; }
     const Config& config() const noexcept { return config_; }
+
+    uint64_t config_epoch() const noexcept {
+        return config_.epoch();
+    }
+
+    LogLevel get_effective_level_uncached(const ReflectedContext& ctx) const noexcept {
+        return config_.get_effective_level(ctx);
+    }
 
     bool is_enabled(LogLevel level, const ReflectedContext& ctx) const noexcept;
 
@@ -50,6 +59,32 @@ private:
 };
 
 namespace detail {
+
+template <std::meta::info Scope, uint32_t Line>
+struct CallSiteStorage {
+    static inline std::atomic<uint64_t> cached_epoch{0};
+    static inline std::atomic<uint8_t> cached_level{static_cast<uint8_t>(LogLevel::INFO)};
+
+    static bool is_enabled(LogLevel lvl, const ReflectedContext& ctx) noexcept {
+        if (lvl == LogLevel::OFF) [[unlikely]] return false;
+
+        uint64_t g_epoch = Logger::instance().config_epoch();
+        uint64_t c_epoch = cached_epoch.load(std::memory_order_relaxed);
+        if (__builtin_expect(c_epoch != g_epoch, 0)) {
+            resolve(g_epoch, ctx);
+        }
+
+        uint8_t eff = cached_level.load(std::memory_order_relaxed);
+        if (eff == static_cast<uint8_t>(LogLevel::OFF)) [[unlikely]] return false;
+        return static_cast<uint8_t>(lvl) >= eff;
+    }
+
+    static void resolve(uint64_t g_epoch, const ReflectedContext& ctx) noexcept {
+        LogLevel effective = Logger::instance().get_effective_level_uncached(ctx);
+        cached_level.store(static_cast<uint8_t>(effective), std::memory_order_relaxed);
+        cached_epoch.store(g_epoch, std::memory_order_release);
+    }
+};
 
 class LogStatement {
 public:
