@@ -1,7 +1,21 @@
-# Vordr: High-Performance C++26 Reflection-Powered Logger
+<p align="center">
+  <img src="assets/vordr_logo.png" alt="Vordr Logo" width="320" style="border-radius: 16px;" />
+</p>
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Standard: C++26](https://img.shields.io/badge/C%2B%2B-26-orange.svg)](#requirements)
+<h1 align="center">Vordr</h1>
+
+<p align="center">
+  <strong>Next-Generation C++26 Reflection-Powered Logger</strong><br>
+  Lock-Free Memory Mapped Persistence • Zero-Allocation Streaming • Granular Hierarchy Control
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL-3.0" /></a>
+  <a href="#requirements"><img src="https://img.shields.io/badge/C%2B%2B-26-orange.svg" alt="Standard: C++26" /></a>
+  <a href="#building-and-testing"><img src="https://img.shields.io/badge/Tests-25%20Passing-brightgreen.svg" alt="Tests" /></a>
+</p>
+
+---
 
 **Vordr** is a state-of-the-art C++26 logging framework built around standard static reflection (`std::meta`). It leverages `std::meta::access_context::current()` at compile time to automatically inspect call-site contexts—identifying caller methods, enclosing classes, source files, and lines. This enables ultrafine logging granularity (configured centrally or down to specific files, classes, or individual methods) with zero runtime inspection overhead.
 
