@@ -1,0 +1,17 @@
+# Build artifacts
+build/
+bin/
+lib/
+*.o
+*.a
+*.so
+*.dylib
+
+# Log files
+*.log
+vordr.log
+
+# System files
+.DS_Store
+*.swp
+*~
