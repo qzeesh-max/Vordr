@@ -135,3 +135,32 @@ TEST_CASE("XML Config - Malformed Syntax Handling") {
     ASSERT_FALSE(err.empty());
 }
 
+TEST_CASE("Config - Thread ID Settings and XML Attributes") {
+    // 1. Default should be true
+    vordr::Config cfg;
+    ASSERT_TRUE(cfg.emit_thread_id());
+
+    // 2. Manual toggle
+    cfg.set_emit_thread_id(false);
+    ASSERT_FALSE(cfg.emit_thread_id());
+    cfg.set_emit_thread_id(true);
+    ASSERT_TRUE(cfg.emit_thread_id());
+
+    // 3. XML parsing with emit_thread_id="false"
+    constexpr std::string_view xml_disabled = R"(<vordr emit_thread_id="false"><sink path="test.log" /></vordr>)";
+    std::string err;
+    ASSERT_TRUE(vordr::XmlConfigParser::parse_string(xml_disabled, cfg, &err));
+    ASSERT_FALSE(cfg.emit_thread_id());
+
+    // 4. XML parsing with emit_thread_id="true"
+    constexpr std::string_view xml_enabled = R"(<vordr emit_thread_id="true"><sink path="test.log" /></vordr>)";
+    ASSERT_TRUE(vordr::XmlConfigParser::parse_string(xml_enabled, cfg, &err));
+    ASSERT_TRUE(cfg.emit_thread_id());
+
+    // 5. XML parsing on logging node
+    constexpr std::string_view xml_logging = R"(<vordr><logging level="INFO" emit_thread_id="false" /></vordr>)";
+    ASSERT_TRUE(vordr::XmlConfigParser::parse_string(xml_logging, cfg, &err));
+    ASSERT_FALSE(cfg.emit_thread_id());
+}
+
+

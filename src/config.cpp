@@ -33,6 +33,7 @@ Config::Config(const Config& other) {
     epoch_.store(other.epoch_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     central_level_ = other.central_level_;
     emit_method_ = other.emit_method_;
+    emit_thread_id_ = other.emit_thread_id_;
     sink_path_ = other.sink_path_;
     sink_max_size_ = other.sink_max_size_;
     method_rules_ = other.method_rules_;
@@ -45,6 +46,7 @@ Config::Config(Config&& other) noexcept {
     epoch_.store(other.epoch_.load(std::memory_order_relaxed), std::memory_order_relaxed);
     central_level_ = other.central_level_;
     emit_method_ = other.emit_method_;
+    emit_thread_id_ = other.emit_thread_id_;
     sink_path_ = std::move(other.sink_path_);
     sink_max_size_ = other.sink_max_size_;
     method_rules_ = std::move(other.method_rules_);
@@ -60,6 +62,7 @@ Config& Config::operator=(const Config& other) {
         epoch_.fetch_add(1, std::memory_order_release);
         central_level_ = other.central_level_;
         emit_method_ = other.emit_method_;
+        emit_thread_id_ = other.emit_thread_id_;
         sink_path_ = other.sink_path_;
         sink_max_size_ = other.sink_max_size_;
         method_rules_ = other.method_rules_;
@@ -77,6 +80,7 @@ Config& Config::operator=(Config&& other) noexcept {
         epoch_.fetch_add(1, std::memory_order_release);
         central_level_ = other.central_level_;
         emit_method_ = other.emit_method_;
+        emit_thread_id_ = other.emit_thread_id_;
         sink_path_ = std::move(other.sink_path_);
         sink_max_size_ = other.sink_max_size_;
         method_rules_ = std::move(other.method_rules_);
@@ -106,6 +110,17 @@ void Config::set_emit_method(bool emit) noexcept {
 bool Config::emit_method() const noexcept {
     std::shared_lock lock(mutex_);
     return emit_method_;
+}
+
+void Config::set_emit_thread_id(bool emit) noexcept {
+    std::unique_lock lock(mutex_);
+    emit_thread_id_ = emit;
+    epoch_.fetch_add(1, std::memory_order_release);
+}
+
+bool Config::emit_thread_id() const noexcept {
+    std::shared_lock lock(mutex_);
+    return emit_thread_id_;
 }
 
 void Config::set_sink_path(std::string path) {

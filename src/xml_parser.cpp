@@ -197,6 +197,11 @@ bool XmlConfigParser::apply_element(const XmlElement& elem, Config& out_config, 
         if (auto em = elem.get_attr("emit_method")) {
             out_config.set_emit_method(*em == "true" || *em == "1" || *em == "yes");
         }
+        if (auto et = elem.get_attr("emit_thread_id")) {
+            out_config.set_emit_thread_id(*et == "true" || *et == "1" || *et == "yes");
+        } else if (auto et2 = elem.get_attr("emit_thread")) {
+            out_config.set_emit_thread_id(*et2 == "true" || *et2 == "1" || *et2 == "yes");
+        }
         for (const auto& child : elem.children) {
             if (!apply_element(child, out_config, error_msg)) return false;
         }
@@ -223,6 +228,11 @@ bool XmlConfigParser::apply_element(const XmlElement& elem, Config& out_config, 
         }
         if (auto em = elem.get_attr("emit_method")) {
             out_config.set_emit_method(*em == "true" || *em == "1" || *em == "yes");
+        }
+        if (auto et = elem.get_attr("emit_thread_id")) {
+            out_config.set_emit_thread_id(*et == "true" || *et == "1" || *et == "yes");
+        } else if (auto et2 = elem.get_attr("emit_thread")) {
+            out_config.set_emit_thread_id(*et2 == "true" || *et2 == "1" || *et2 == "yes");
         }
         for (const auto& child : elem.children) {
             if (!apply_element(child, out_config, error_msg)) return false;

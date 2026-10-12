@@ -7,6 +7,7 @@
 #include "vordr/config.hpp"
 #include "vordr/xml_parser.hpp"
 #include "vordr/timestamp.hpp"
+#include "vordr/thread_id.hpp"
 #include "vordr/stream_buffer.hpp"
 #include "vordr/mmap_sink.hpp"
 #include "vordr/logger.hpp"

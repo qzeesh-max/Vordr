@@ -10,6 +10,7 @@
 #include <cstring>
 #include "vordr/types.hpp"
 #include "vordr/timestamp.hpp"
+#include "vordr/thread_id.hpp"
 
 namespace vordr {
 
@@ -176,7 +177,7 @@ public:
         clear();
     }
 
-    void write_header(const ReflectedContext& ctx, LogLevel level, bool emit_method) {
+    void write_header(const ReflectedContext& ctx, LogLevel level, bool emit_method, bool emit_thread_id = true) {
         // Date-time upto microsecond (26 chars)
         char ts[Timestamp::FORMATTED_LENGTH + 1];
         Timestamp::format_now(ts, sizeof(ts));
@@ -185,6 +186,13 @@ public:
         write_fast(" - ", 3);
         std::string_view lvl_str = to_string(level);
         write_fast(lvl_str.data(), lvl_str.size());
+
+        if (emit_thread_id) {
+            write_fast(" - ", 3);
+            std::string_view tid_str = ThreadId::get_formatted();
+            write_fast(tid_str.data(), tid_str.size());
+        }
+
         write_fast(" - ", 3);
 
         write_fast(ctx.file_name.data(), ctx.file_name.size());

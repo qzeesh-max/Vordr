@@ -59,9 +59,9 @@ TEST_CASE("StreamBuffer - Header Format Without Method") {
     stream << "Starting transaction";
 
     std::string res(stream.view());
-    // Pattern: date-time upto microsecond - LogLevel - Filename (without path) :Linenumber : Actual Log Entry
-    // e.g. YYYY-MM-DD HH:MM:SS.ffffff - INFO - Controller.cpp:77 : Starting transaction
-    std::regex log_regex(R"(^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - INFO - Controller\.cpp:77 : Starting transaction$)");
+    // Pattern: date-time upto microsecond - LogLevel - [tid:...] - Filename (without path) :Linenumber : Actual Log Entry
+    // e.g. YYYY-MM-DD HH:MM:SS.ffffff - INFO - [tid:1234] - Controller.cpp:77 : Starting transaction
+    std::regex log_regex(R"(^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - INFO - \[tid:\d+\] - Controller\.cpp:77 : Starting transaction$)");
     ASSERT_TRUE(std::regex_match(res, log_regex));
 }
 
@@ -79,7 +79,26 @@ TEST_CASE("StreamBuffer - Header Format With Method") {
     stream << "Processing request";
 
     std::string res(stream.view());
-    // Must include [App::Controller::doAction]
-    std::regex log_regex(R"(^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - DEBUG - Controller\.cpp:77 : \[App::Controller::doAction\] Processing request$)");
+    // Must include [tid:...] and [App::Controller::doAction]
+    std::regex log_regex(R"(^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - DEBUG - \[tid:\d+\] - Controller\.cpp:77 : \[App::Controller::doAction\] Processing request$)");
+    ASSERT_TRUE(std::regex_match(res, log_regex));
+}
+
+TEST_CASE("StreamBuffer - Header Format Without Thread ID") {
+    vordr::LogStream<1024> stream;
+    vordr::ReflectedContext ctx{
+        .method_name = "doAction",
+        .class_name = "App::Controller",
+        .full_scope_name = "App::Controller::doAction",
+        .file_name = "Controller.cpp",
+        .line_number = 77
+    };
+
+    // emit_method = false, emit_thread_id = false
+    stream.write_header(ctx, vordr::LogLevel::INFO, false, false);
+    stream << "Starting transaction";
+
+    std::string res(stream.view());
+    std::regex log_regex(R"(^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - INFO - Controller\.cpp:77 : Starting transaction$)");
     ASSERT_TRUE(std::regex_match(res, log_regex));
 }

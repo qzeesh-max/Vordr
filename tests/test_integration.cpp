@@ -72,9 +72,40 @@ TEST_CASE("Integration - Full XML Configuration End-to-End") {
     // Check audit WARN was suppressed
     ASSERT_TRUE(content.find("Security action recorded") == std::string_view::npos);
 
-    // Verify format of log lines with regex:
-    // date-time upto microsecond - LogLevel - Filename (without path) :Linenumber : [Method] Actual Log Entry
-    std::regex line_regex(R"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - INFO - test_integration\.cpp:\d+ : \[IntegrationTest::PaymentService::processPayment\] Processing payment #42\n)");
+    // Verify format of log lines with regex (thread ID included by default):
+    // date-time upto microsecond - LogLevel - [tid:...] - Filename (without path) :Linenumber : [Method] Actual Log Entry
+    std::regex line_regex(R"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - INFO - \[tid:\d+\] - test_integration\.cpp:\d+ : \[IntegrationTest::PaymentService::processPayment\] Processing payment #42\n)");
+    ASSERT_TRUE(std::regex_search(std::string(content), line_regex));
+
+    std::remove(log_file.c_str());
+}
+
+TEST_CASE("Integration - Disable Thread ID via XML Configuration") {
+    const std::string log_file = "/tmp/vordr_no_tid.log";
+    std::remove(log_file.c_str());
+
+    constexpr std::string_view xml_config = R"(<?xml version="1.0" encoding="UTF-8"?>
+<vordr>
+    <sink path="/tmp/vordr_no_tid.log" max_size="1048576" />
+    <logging level="INFO" emit_method="false" emit_thread_id="false" />
+</vordr>
+)";
+
+    auto& logger = vordr::Logger::instance();
+    logger.reset();
+    std::string err;
+    bool ok = logger.init_xml_string(xml_config, &err);
+    ASSERT_TRUE(ok);
+    ASSERT_FALSE(logger.config().emit_thread_id());
+
+    VORDR_INFO << "Message without thread id";
+    logger.flush(true);
+
+    std::string_view content = logger.sink()->written_content();
+    ASSERT_TRUE(content.find("Message without thread id") != std::string_view::npos);
+    ASSERT_TRUE(content.find("[tid:") == std::string_view::npos);
+
+    std::regex line_regex(R"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6} - INFO - test_integration\.cpp:\d+ : Message without thread id\n)");
     ASSERT_TRUE(std::regex_search(std::string(content), line_regex));
 
     std::remove(log_file.c_str());

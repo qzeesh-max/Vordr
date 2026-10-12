@@ -27,6 +27,9 @@ public:
     void set_emit_method(bool emit) noexcept;
     bool emit_method() const noexcept;
 
+    void set_emit_thread_id(bool emit) noexcept;
+    bool emit_thread_id() const noexcept;
+
     void set_sink_path(std::string path);
     const std::string& sink_path() const noexcept;
 
@@ -64,6 +67,7 @@ private:
     std::atomic<uint64_t> epoch_{1};
     LogLevel central_level_{LogLevel::INFO};
     bool emit_method_{false};
+    bool emit_thread_id_{true};
     std::string sink_path_{"vordr.log"};
     size_t sink_max_size_{64 * 1024 * 1024}; // 64MB default
 

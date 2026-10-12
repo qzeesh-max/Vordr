@@ -105,7 +105,7 @@ public:
     LogStatement(LogLevel level, const ReflectedContext& ctx, Logger& logger) noexcept
         : logger_(logger)
     {
-        stream_.write_header(ctx, level, logger.config().emit_method());
+        stream_.write_header(ctx, level, logger.config().emit_method(), logger.config().emit_thread_id());
     }
 
     ~LogStatement() {

@@ -12,7 +12,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="#requirements"><img src="https://img.shields.io/badge/C%2B%2B-26-orange.svg" alt="Standard: C++26" /></a>
-  <a href="#building-and-testing"><img src="https://img.shields.io/badge/Tests-32%20Passing-brightgreen.svg" alt="Tests" /></a>
+  <a href="#building-and-testing"><img src="https://img.shields.io/badge/Tests-36%20Passing-brightgreen.svg" alt="Tests" /></a>
   <a href="#performance-benchmarks--profiling"><img src="https://img.shields.io/badge/Gating-0.75%20ns%2Fop-brightgreen.svg" alt="Latency" /></a>
   <a href="#zero-syscall-civil-calendar-timestamping"><img src="https://img.shields.io/badge/Syscalls-0%20per%20log-brightgreen.svg" alt="Syscalls" /></a>
 </p>
@@ -220,6 +220,21 @@ In high-throughput binaries, distributing log site controls across `.data` or `.
 
 ---
 
+## Log Line Format
+
+Log lines adhere to the following standard header format:
+
+```text
+<timestamp upto microsecond> - <LogLevel> - [tid:<thread_id>] - <file>:<line> : [<class>::<method>] <message>
+```
+
+When thread ID emission is disabled (`emit_thread_id="false"`), `[tid:<thread_id>]` is omitted:
+```text
+<timestamp upto microsecond> - <LogLevel> - <file>:<line> : [<class>::<method>] <message>
+```
+
+---
+
 ## XML Configuration File
 
 Vordr supports runtime XML configuration to define sink parameters, central log levels, and fine-grained overrides:
@@ -230,8 +245,9 @@ Vordr supports runtime XML configuration to define sink parameters, central log 
     <!-- Memory mapped file sink configuration -->
     <sink path="/var/log/vordr.log" max_size="67108864" />
 
-    <!-- Central log level and optional method name emission -->
-    <logging level="INFO" emit_method="true">
+    <!-- Central log level, method name emission, and thread ID configuration -->
+    <!-- emit_thread_id defaults to true; set to false to omit [tid:...] -->
+    <logging level="INFO" emit_method="true" emit_thread_id="true">
         <!-- File-level override -->
         <file name="network.cpp" level="DEBUG" />
 
