@@ -12,7 +12,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL_v3-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="#requirements"><img src="https://img.shields.io/badge/C%2B%2B-26-orange.svg" alt="Standard: C++26" /></a>
-  <a href="#building-and-testing"><img src="https://img.shields.io/badge/Tests-36%20Passing-brightgreen.svg" alt="Tests" /></a>
+  <a href="#building-and-testing"><img src="https://img.shields.io/badge/Tests-40%20Passing-brightgreen.svg" alt="Tests" /></a>
   <a href="#performance-benchmarks--profiling"><img src="https://img.shields.io/badge/Gating-0.75%20ns%2Fop-brightgreen.svg" alt="Latency" /></a>
   <a href="#zero-syscall-civil-calendar-timestamping"><img src="https://img.shields.io/badge/Syscalls-0%20per%20log-brightgreen.svg" alt="Syscalls" /></a>
 </p>
@@ -61,8 +61,13 @@
    - Multiple threads write concurrently directly into disjoint memory slices without lock contention (>750 MB/s sustained disk throughput).
    - Auto-expands mapped capacity under load when needed.
 
-8. **Microsecond Precision Log Format**:
-   - `YYYY-MM-DD HH:MM:SS.ffffff - LogLevel - Filename:Linenumber : Actual Log Entry`
+8. **Multi-Restart Append Continuity & Crash Recovery**:
+   - Resumes seamlessly from the end of existing log files across process restarts without overwriting prior history.
+   - **Crash Recovery**: If an application crashes before a clean `close()` (leaving a pre-allocated file with trailing nulls), `MmapSink` scans backwards in 64-bit blocks to locate the true end of valid log data, trimming trailing padding and appending new logs without null holes.
+   - Optional overwrite mode (`append=false`) supported for testing or fresh log cycles.
+
+9. **Microsecond Precision Log Format**:
+   - `YYYY-MM-DD HH:MM:SS.ffffff - LogLevel - [tid:thread_id] - Filename:Linenumber : Actual Log Entry`
    - Configurable optional emission of method names: `[Namespace::Class::Method]`.
 
 ---

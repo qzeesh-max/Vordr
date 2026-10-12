@@ -16,7 +16,7 @@ public:
     static constexpr size_t DEFAULT_CAPACITY = 64 * 1024 * 1024; // 64 MB
     static constexpr size_t MIN_CAPACITY     = 64 * 1024;       // 64 KB
 
-    explicit MmapSink(std::string file_path, size_t initial_capacity = DEFAULT_CAPACITY);
+    explicit MmapSink(std::string file_path, size_t initial_capacity = DEFAULT_CAPACITY, bool append = true);
     ~MmapSink();
 
     // Non-copyable, non-movable for safety of atomic state and mmap pointers
@@ -41,6 +41,15 @@ public:
         return write_cursor_.load(std::memory_order_acquire);
     }
 
+    size_t initial_offset() const noexcept {
+        return initial_offset_;
+    }
+
+    size_t session_bytes_written() const noexcept {
+        size_t current = write_cursor_.load(std::memory_order_acquire);
+        return current >= initial_offset_ ? current - initial_offset_ : 0;
+    }
+
     size_t capacity() const noexcept {
         return capacity_.load(std::memory_order_acquire);
     }
@@ -52,11 +61,15 @@ public:
     // Inspect mapped contents (useful for testing & reading logged entries)
     std::string_view written_content() const noexcept;
 
+    // Inspect content written during the current session only
+    std::string_view session_content() const noexcept;
+
     bool is_open() const noexcept {
         return fd_ != -1 && mmap_ptr_ != nullptr;
     }
 
 private:
+    static size_t scan_valid_content_size(int fd, size_t file_size) noexcept;
     bool remap_grow(size_t required_capacity) noexcept;
 
     std::string file_path_;
@@ -64,6 +77,7 @@ private:
     char* mmap_ptr_{nullptr};
     std::atomic<size_t> capacity_{0};
     std::atomic<size_t> write_cursor_{0};
+    size_t initial_offset_{0};
     std::mutex expand_mutex_;
 };
 

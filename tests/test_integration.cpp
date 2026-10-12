@@ -204,3 +204,72 @@ TEST_CASE("Integration - Lazy Sink Initialization and Dynamic Reconfiguration") 
     std::remove(log_file2.c_str());
 }
 
+TEST_CASE("Integration - Multi-Restart Macro Logging Across Application Lifecycles") {
+    const std::string log_file = "/tmp/vordr_lifecycle_restart.log";
+    std::remove(log_file.c_str());
+
+    auto& logger = vordr::Logger::instance();
+
+    // Lifecycle 1
+    {
+        logger.reset();
+        vordr::Config cfg;
+        cfg.set_sink_path(log_file);
+        cfg.set_central_level(vordr::LogLevel::INFO);
+        cfg.set_emit_thread_id(false);
+        logger.init(std::move(cfg));
+
+        VORDR_INFO << "Lifecycle 1: system started";
+        VORDR_INFO << "Lifecycle 1: workload executed";
+        logger.close();
+    }
+
+    // Lifecycle 2 (simulating restart)
+    {
+        logger.reset();
+        vordr::Config cfg;
+        cfg.set_sink_path(log_file);
+        cfg.set_central_level(vordr::LogLevel::INFO);
+        cfg.set_emit_thread_id(false);
+        logger.init(std::move(cfg));
+
+        VORDR_INFO << "Lifecycle 2: system restarted";
+        logger.close();
+    }
+
+    // Lifecycle 3 (simulating restart)
+    {
+        logger.reset();
+        vordr::Config cfg;
+        cfg.set_sink_path(log_file);
+        cfg.set_central_level(vordr::LogLevel::INFO);
+        cfg.set_emit_thread_id(false);
+        logger.init(std::move(cfg));
+
+        VORDR_INFO << "Lifecycle 3: post-reboot healthcheck OK";
+        logger.close();
+    }
+
+    // Read full file from disk and assert all 4 entries are present in sequence
+    std::ifstream in(log_file, std::ios::binary);
+    ASSERT_TRUE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+    ASSERT_TRUE(content.find("Lifecycle 1: system started") != std::string::npos);
+    ASSERT_TRUE(content.find("Lifecycle 1: workload executed") != std::string::npos);
+    ASSERT_TRUE(content.find("Lifecycle 2: system restarted") != std::string::npos);
+    ASSERT_TRUE(content.find("Lifecycle 3: post-reboot healthcheck OK") != std::string::npos);
+
+    // Verify ordering
+    size_t pos1 = content.find("Lifecycle 1: system started");
+    size_t pos2 = content.find("Lifecycle 1: workload executed");
+    size_t pos3 = content.find("Lifecycle 2: system restarted");
+    size_t pos4 = content.find("Lifecycle 3: post-reboot healthcheck OK");
+    ASSERT_TRUE(pos1 < pos2);
+    ASSERT_TRUE(pos2 < pos3);
+    ASSERT_TRUE(pos3 < pos4);
+
+    std::remove(log_file.c_str());
+}
+
+

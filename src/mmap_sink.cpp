@@ -11,24 +11,72 @@
 
 namespace vordr {
 
-MmapSink::MmapSink(std::string file_path, size_t initial_capacity)
+size_t MmapSink::scan_valid_content_size(int fd, size_t file_size) noexcept {
+    if (file_size == 0 || fd == -1) {
+        return 0;
+    }
+
+    void* initial_map = ::mmap(nullptr, file_size, PROT_READ, MAP_SHARED, fd, 0);
+    if (initial_map == MAP_FAILED) {
+        return 0;
+    }
+
+    const char* p = static_cast<const char*>(initial_map);
+    ssize_t last = static_cast<ssize_t>(file_size) - 1;
+
+    // Fast-path: if the last byte is non-null (clean shutdown), return full size immediately!
+    if (p[last] != '\0') {
+        ::munmap(initial_map, file_size);
+        return file_size;
+    }
+
+    // Backward scan for unclean shutdown recovery (skipping 64-bit zero blocks)
+    while (last >= 0 && (last % 8 != 7) && p[last] == '\0') {
+        --last;
+    }
+    while (last >= 7) {
+        uint64_t val = 0;
+        std::memcpy(&val, p + last - 7, 8);
+        if (val != 0) {
+            while (last >= 0 && p[last] == '\0') {
+                --last;
+            }
+            break;
+        }
+        last -= 8;
+    }
+    while (last >= 0 && p[last] == '\0') {
+        --last;
+    }
+
+    size_t valid_size = (last >= 0) ? static_cast<size_t>(last + 1) : 0;
+    ::munmap(initial_map, file_size);
+    return valid_size;
+}
+
+MmapSink::MmapSink(std::string file_path, size_t initial_capacity, bool append)
     : file_path_(std::move(file_path))
 {
-    size_t cap = std::max(initial_capacity, MIN_CAPACITY);
     fd_ = ::open(file_path_.c_str(), O_RDWR | O_CREAT, 0644);
     if (fd_ == -1) {
         return;
     }
 
-    struct stat st{};
-    if (::fstat(fd_, &st) == 0 && st.st_size > static_cast<off_t>(cap)) {
-        cap = static_cast<size_t>(st.st_size);
-    } else {
-        if (::ftruncate(fd_, static_cast<off_t>(cap)) != 0) {
-            ::close(fd_);
-            fd_ = -1;
-            return;
+    size_t resume_pos = 0;
+    if (append) {
+        struct stat st{};
+        if (::fstat(fd_, &st) == 0 && st.st_size > 0) {
+            resume_pos = scan_valid_content_size(fd_, static_cast<size_t>(st.st_size));
         }
+    }
+
+    initial_offset_ = resume_pos;
+    size_t cap = std::max(resume_pos + initial_capacity, MIN_CAPACITY);
+
+    if (::ftruncate(fd_, static_cast<off_t>(cap)) != 0) {
+        ::close(fd_);
+        fd_ = -1;
+        return;
     }
 
     void* ptr = ::mmap(nullptr, cap, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
@@ -40,7 +88,7 @@ MmapSink::MmapSink(std::string file_path, size_t initial_capacity)
 
     mmap_ptr_ = static_cast<char*>(ptr);
     capacity_.store(cap, std::memory_order_release);
-    write_cursor_.store(0, std::memory_order_release);
+    write_cursor_.store(resume_pos, std::memory_order_release);
 }
 
 MmapSink::~MmapSink() {
@@ -155,6 +203,15 @@ std::string_view MmapSink::written_content() const noexcept {
     size_t written = write_cursor_.load(std::memory_order_acquire);
     size_t cap = capacity_.load(std::memory_order_acquire);
     return std::string_view(mmap_ptr_, std::min(written, cap));
+}
+
+std::string_view MmapSink::session_content() const noexcept {
+    if (!is_open()) return {};
+    size_t written = write_cursor_.load(std::memory_order_acquire);
+    size_t cap = capacity_.load(std::memory_order_acquire);
+    size_t total = std::min(written, cap);
+    if (total <= initial_offset_) return {};
+    return std::string_view(mmap_ptr_ + initial_offset_, total - initial_offset_);
 }
 
 } // namespace vordr
