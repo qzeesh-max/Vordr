@@ -37,7 +37,7 @@ int main() {
 
     constexpr std::string_view xml_config = R"(<?xml version="1.0" encoding="UTF-8"?>
 <vordr>
-    <sink path="/tmp/vordr_demo.log" max_size="10485760" />
+    <sink path="vordr.log" max_size="10485760" />
     <logging level="INFO" emit_method="true">
         <class name="Demo::DatabaseManager" level="TRACE" />
     </logging>
@@ -68,6 +68,9 @@ int main() {
     std::cout << "\n--- Generated Memory-Mapped Log Output ---\n";
     std::cout << logger.sink()->written_content();
     std::cout << "--- End of Log ---\n";
+    std::cout << "Log saved to: " << logger.config().sink_path() << " ("
+              << logger.sink()->bytes_written() << " bytes)\n";
 
+    logger.close();
     return 0;
 }

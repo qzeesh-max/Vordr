@@ -4,6 +4,7 @@
 #include "test_framework.hpp"
 #include "vordr/vordr.hpp"
 #include <regex>
+#include <fstream>
 #include <thread>
 #include <vector>
 #include <cstdio>
@@ -125,3 +126,50 @@ TEST_CASE("Integration - Multi-Threaded Macro Logging") {
 
     std::remove(log_file.c_str());
 }
+
+TEST_CASE("Integration - Lazy Sink Initialization and Dynamic Reconfiguration") {
+    const std::string log_file1 = "/tmp/vordr_lazy_sink1.log";
+    const std::string log_file2 = "/tmp/vordr_lazy_sink2.log";
+    std::remove(log_file1.c_str());
+    std::remove(log_file2.c_str());
+
+    auto& logger = vordr::Logger::instance();
+    logger.reset();
+
+    // 1. Initial configuration to log_file1
+    vordr::Config cfg1;
+    cfg1.set_sink_path(log_file1);
+    cfg1.set_central_level(vordr::LogLevel::INFO);
+    logger.init(std::move(cfg1));
+
+    VORDR_INFO << "Message written to sink 1";
+    logger.flush(true);
+    ASSERT_TRUE(logger.sink()->bytes_written() > 0);
+
+    // 2. Dynamic re-initialization to log_file2
+    vordr::Config cfg2;
+    cfg2.set_sink_path(log_file2);
+    cfg2.set_central_level(vordr::LogLevel::INFO);
+    logger.init(std::move(cfg2));
+
+    VORDR_INFO << "Message written to sink 2";
+    logger.flush(true);
+    ASSERT_TRUE(logger.sink()->bytes_written() > 0);
+
+    logger.close();
+
+    // 3. Verify both files exist and are non-empty directly on the filesystem
+    std::ifstream f1(log_file1, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(f1.is_open());
+    auto sz1 = f1.tellg();
+    ASSERT_TRUE(sz1 > 0);
+
+    std::ifstream f2(log_file2, std::ios::binary | std::ios::ate);
+    ASSERT_TRUE(f2.is_open());
+    auto sz2 = f2.tellg();
+    ASSERT_TRUE(sz2 > 0);
+
+    std::remove(log_file1.c_str());
+    std::remove(log_file2.c_str());
+}
+

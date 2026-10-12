@@ -12,8 +12,7 @@ Logger& Logger::instance() noexcept {
 }
 
 Logger::Logger() {
-    // Default fallback sink
-    sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
+    // Sink is lazily initialized on first write or explicit configuration
 }
 
 Logger::~Logger() {
@@ -38,6 +37,10 @@ bool Logger::init_xml_string(std::string_view xml_content, std::string* error_ms
 
 bool Logger::init(Config config) {
     std::unique_lock lock(sink_mutex_);
+    if (sink_) {
+        sink_->close();
+        sink_.reset();
+    }
     config_ = std::move(config);
     sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
     return sink_->is_open();
@@ -45,11 +48,22 @@ bool Logger::init(Config config) {
 
 void Logger::set_sink(std::unique_ptr<MmapSink> sink) noexcept {
     std::unique_lock lock(sink_mutex_);
+    if (sink_) {
+        sink_->close();
+    }
     sink_ = std::move(sink);
 }
 
 MmapSink* Logger::sink() noexcept {
     std::shared_lock lock(sink_mutex_);
+    if (!sink_) {
+        lock.unlock();
+        std::unique_lock ulock(sink_mutex_);
+        if (!sink_) {
+            sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
+        }
+        return sink_.get();
+    }
     return sink_.get();
 }
 
@@ -64,9 +78,18 @@ bool Logger::is_enabled(LogLevel level, const ReflectedContext& ctx) const noexc
 
 void Logger::write_log(std::string_view entry) noexcept {
     std::shared_lock lock(sink_mutex_);
-    if (sink_) {
-        sink_->write(entry);
+    if (!sink_) {
+        lock.unlock();
+        std::unique_lock ulock(sink_mutex_);
+        if (!sink_) {
+            sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
+        }
+        if (sink_) {
+            sink_->write(entry);
+        }
+        return;
     }
+    sink_->write(entry);
 }
 
 void Logger::flush(bool sync) noexcept {
@@ -80,13 +103,17 @@ void Logger::close() noexcept {
     std::unique_lock lock(sink_mutex_);
     if (sink_) {
         sink_->close();
+        sink_.reset();
     }
 }
 
 void Logger::reset() noexcept {
     std::unique_lock lock(sink_mutex_);
+    if (sink_) {
+        sink_->close();
+        sink_.reset();
+    }
     config_ = Config{};
-    sink_ = std::make_unique<MmapSink>(config_.sink_path(), config_.sink_max_size());
 }
 
 } // namespace vordr
